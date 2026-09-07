@@ -1,0 +1,36 @@
+# Manual registration form for the product policy knowledge base.
+#
+# As with crm-query-tool.yaml, this asset is also extracted from
+# examples/dify/product-recommendation-workflow.dsl.yaml. Kept as a format reference and
+# to exercise the duplicate check.
+name: Product Policy Knowledge Base
+id: product-policy-kb
+type: knowledge_data
+subtype: dataset
+description: Product suitability rules and disclosure requirement documents.
+business_domain: product
+intents:
+  - product_policy_lookup
+tags:
+  - product
+  - policy
+  - suitability
+owner: product-governance
+permissions:
+  - product_catalog_read
+risk_level: low
+reusable: true
+input_schema:
+  type: object
+  properties:
+    query:
+      type: string
+  required:
+    - query
+output_schema:
+  type: object
+  properties:
+    documents:
+      type: array
+metadata:
+  refresh_schedule: weekly

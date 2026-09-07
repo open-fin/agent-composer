@@ -1,0 +1,37 @@
+# Manual registration form for the CRM query tool.
+#
+# This same tool is also extracted from examples/dify/customer-insight-agent.dsl.yaml.
+# The file is kept as a reference for the manual YAML format and to demonstrate the
+# duplicate check: importing it after the Dify DSL produces a candidate whose
+# registration is refused with a conflict, because tool/crm-query already exists.
+name: CRM Query Tool
+id: crm-query
+type: tool
+subtype: api
+description: Queries the core banking CRM for a customer profile record.
+business_domain: customer
+intents:
+  - customer_profile_query
+tags:
+  - crm
+  - customer
+  - profile
+owner: core-banking
+permissions:
+  - customer_profile_read
+risk_level: low
+reusable: true
+input_schema:
+  type: object
+  properties:
+    customer_id:
+      type: string
+  required:
+    - customer_id
+output_schema:
+  type: object
+  properties:
+    profile:
+      type: object
+metadata:
+  system_of_record: core-banking-crm

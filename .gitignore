@@ -1,0 +1,10 @@
+# Build output
+/composer-server
+/agentctl
+/dist
+web/dist
+web/node_modules
+
+# Local overrides
+configs/config.local.yaml
+.env

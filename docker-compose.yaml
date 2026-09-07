@@ -1,0 +1,52 @@
+# agent-composer demo stack: database, API, web UI.
+#
+# `docker compose up --build` is the only command needed. The API applies its embedded
+# migrations on boot, so there is no separate migration step.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: composer
+      POSTGRES_PASSWORD: composer
+      POSTGRES_DB: agent_composer
+    volumes:
+      - composer-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U composer -d agent_composer"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Exposed so you can inspect the schema; the app talks over the internal network.
+    ports:
+      - "5432:5432"
+
+  composer-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      COMPOSER_HTTP_ADDR: ":8088"
+      COMPOSER_DB_DSN: "postgres://composer:composer@postgres:5432/agent_composer?sslmode=disable"
+      COMPOSER_DB_MIGRATE_ON_START: "true"
+      # Enrichment defaults to the deterministic mock. To use a real endpoint set
+      # COMPOSER_LLM_ENABLED=true together with COMPOSER_LLM_BASE_URL and
+      # COMPOSER_LLM_API_KEY; it falls back to the mock if that endpoint misbehaves.
+      COMPOSER_LLM_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8088:8088"
+
+  composer-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    depends_on:
+      composer-server:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+
+volumes:
+  composer-pgdata:

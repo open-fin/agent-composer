@@ -1,0 +1,100 @@
+# Dify application export (DSL). Structure follows a real Dify export: an `app` header,
+# `kind`/`version`, and a `workflow.graph` of nodes and edges.
+#
+# Importing this one file yields six capability candidates: the agent, the workflow that
+# drives it, the CRM tool it calls, the knowledge base it reads, the prompt behind its
+# llm node, and the business skill that llm node implements.
+app:
+  name: Customer Insight Agent
+  mode: advanced-chat
+  icon: "\U0001F9ED"
+  icon_background: "#EFF1F5"
+  description: Analyzes a customer profile and produces an actionable insight summary for relationship managers.
+kind: app
+version: 0.1.5
+workflow:
+  graph:
+    nodes:
+      - id: start
+        type: custom
+        data:
+          type: start
+          title: Start
+          desc: Entry point. Takes the customer identifier to analyze.
+          variables:
+            - variable: customer_id
+              label: Customer ID
+              type: text-input
+              required: true
+            - variable: relationship_manager
+              label: Relationship Manager
+              type: text-input
+              required: false
+      - id: crm_query
+        type: custom
+        data:
+          type: tool
+          title: CRM Query Tool
+          desc: Queries the core banking CRM for a customer profile record.
+          provider_id: crm-query
+          provider_name: core-banking
+          provider_type: api
+          tool_name: get_customer_profile
+          tool_parameters:
+            customer_id: "{{#start.customer_id#}}"
+      - id: profile_kb
+        type: custom
+        data:
+          type: knowledge-retrieval
+          title: Customer Profile Knowledge Base
+          desc: Curated customer profile documents and relationship notes.
+          query_variable_selector:
+            - start
+            - customer_id
+          dataset_ids:
+            - customer-profile-kb
+      - id: insight_llm
+        type: custom
+        data:
+          type: llm
+          title: Customer Insight
+          desc: Turns a customer profile record into a structured insight summary.
+          model:
+            provider: openai
+            name: gpt-4o-mini
+            mode: chat
+            completion_params:
+              temperature: 0.2
+          prompt_template:
+            - role: system
+              text: |
+                You are a customer insight analyst at a retail bank.
+                Given a customer profile record and supporting relationship notes,
+                produce a structured insight summary containing:
+                  - life stage and financial priorities
+                  - recent behavioural changes
+                  - three concrete opportunities for the relationship manager
+                Be specific and cite the field you drew each observation from.
+            - role: user
+              text: |
+                Customer profile: {{#crm_query.result#}}
+                Relationship notes: {{#profile_kb.result#}}
+      - id: answer
+        type: custom
+        data:
+          type: answer
+          title: Answer
+          answer: "{{#insight_llm.text#}}"
+    edges:
+      - id: e-start-crm
+        source: start
+        target: crm_query
+      - id: e-crm-kb
+        source: crm_query
+        target: profile_kb
+      - id: e-kb-llm
+        source: profile_kb
+        target: insight_llm
+      - id: e-llm-answer
+        source: insight_llm
+        target: answer

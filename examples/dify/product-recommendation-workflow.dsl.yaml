@@ -1,0 +1,97 @@
+# Dify workflow export. `mode: workflow` means this app is not conversational, so no
+# agent capability is extracted from it - only the workflow, its tool, its knowledge
+# base, its prompt, and the product recommendation skill inferred from the llm node.
+app:
+  name: Product Recommendation Workflow
+  mode: workflow
+  icon: "\U0001F4C8"
+  icon_background: "#E4FBCC"
+  description: Ranks catalog products against a customer insight summary and returns suitable offers.
+kind: app
+version: 0.1.5
+workflow:
+  graph:
+    nodes:
+      - id: start
+        type: custom
+        data:
+          type: start
+          title: Start
+          desc: Entry point. Takes the customer insight summary to recommend against.
+          variables:
+            - variable: customer_insight
+              label: Customer Insight Summary
+              type: paragraph
+              required: true
+      - id: catalog_query
+        type: custom
+        data:
+          type: tool
+          title: Product Catalog Query Tool
+          desc: Looks up the product catalog for products the customer is eligible for.
+          provider_id: product-catalog-query
+          provider_name: product-platform
+          provider_type: api
+          tool_name: search_products
+          tool_parameters:
+            eligibility_profile: "{{#start.customer_insight#}}"
+      - id: policy_kb
+        type: custom
+        data:
+          type: knowledge-retrieval
+          title: Product Policy Knowledge Base
+          desc: Product suitability rules and disclosure requirement documents.
+          query_variable_selector:
+            - start
+            - customer_insight
+          dataset_ids:
+            - product-policy-kb
+      - id: recommend_llm
+        type: custom
+        data:
+          type: llm
+          title: Product Recommendation
+          desc: Business skill that ranks catalog products against a customer insight summary and returns suitable offers.
+          model:
+            provider: openai
+            name: gpt-4o-mini
+            mode: chat
+            completion_params:
+              temperature: 0.3
+          prompt_template:
+            - role: system
+              text: |
+                You recommend banking products to relationship managers.
+                Rank the candidate products against the customer insight summary and
+                return at most three recommendations. For each one give:
+                  - the product name
+                  - why it suits this customer
+                  - the suitability rule that permits offering it
+                Never recommend a product the suitability rules exclude.
+            - role: user
+              text: |
+                Customer insight: {{#start.customer_insight#}}
+                Candidate products: {{#catalog_query.result#}}
+                Suitability rules: {{#policy_kb.result#}}
+      - id: end
+        type: custom
+        data:
+          type: end
+          title: End
+          outputs:
+            - variable: recommendations
+              label: Product Recommendations
+              type: paragraph
+    edges:
+      - id: e-start-catalog
+        source: start
+        target: catalog_query
+      - id: e-catalog-policy
+        source: catalog_query
+        target: policy_kb
+      - id: e-policy-llm
+        source: policy_kb
+        target: recommend_llm
+      - id: e-llm-end
+        source: recommend_llm
+        target: end

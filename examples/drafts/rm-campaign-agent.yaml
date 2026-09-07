@@ -1,0 +1,40 @@
+business_agent:
+  id: rm-campaign-agent
+  name: RM Campaign Agent
+  goal: Create an RM campaign agent that analyzes customer profile, recommends suitable products, drafts a campaign message, and checks compliance before outreach.
+  description: Generates customer campaign suggestions for relationship managers.
+  status: needs_review
+  harness:
+    type: jiuwen_swarm
+    mode: bounded_dynamic_team
+  composition:
+    agents:
+      - customer-insight-agent
+    skills:
+      - product-recommendation
+      - compliance-check
+    tools:
+      - crm-query
+      - product-catalog-query
+    knowledge_data:
+      - customer-profile-kb
+      - product-policy-kb
+    prompts:
+      - campaign-message-template
+  workflow:
+    - query_customer_profile
+    - generate_customer_insight
+    - recommend_product
+    - draft_campaign_message
+    - compliance_check
+  governance:
+    risk_level: medium
+    approval_required:
+      - external_customer_outreach
+    permissions:
+      - customer_profile_read
+      - product_catalog_read
+  missing_capabilities:
+    - step: outreach_send
+      type: tool
+      suggestion: 'register a tool capability covering: outreach, send, channel, notify, delivery'

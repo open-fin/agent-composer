@@ -1,0 +1,44 @@
+# The prompt template the RM campaign agent drafts its outreach message with.
+#
+# It declares the approval gate that ends up in the generated draft's governance block:
+# anything that speaks to a customer needs sign-off before it is sent.
+name: Campaign Message Template
+id: campaign-message-template
+type: prompt_template
+subtype: system_prompt
+description: Message template used to draft a relationship-manager campaign message from a product recommendation.
+business_domain: marketing
+intents:
+  - campaign_message
+tags:
+  - campaign
+  - message
+  - marketing
+owner: marketing-enablement
+permissions: []
+risk_level: medium
+reusable: true
+input_schema:
+  type: object
+  properties:
+    customer_insight:
+      type: string
+    recommended_products:
+      type: array
+  required:
+    - customer_insight
+    - recommended_products
+output_schema:
+  type: object
+  properties:
+    message:
+      type: string
+metadata:
+  approval_required:
+    - external_customer_outreach
+  channel: email
+  prompt_text: |
+    Draft a short, warm outreach message from a relationship manager to their client.
+    Ground every claim in the supplied customer insight, mention at most two of the
+    recommended products, and close with a concrete next step. Do not state any rate,
+    fee or guarantee that is not present in the product data.

@@ -1,0 +1,42 @@
+# A capability the enterprise registers by hand: it lives in an internal system that
+# has no importer, so it is declared directly. Manual entries arrive complete, which is
+# why their fields are `extracted` rather than `inferred`.
+name: Compliance Check Skill
+id: compliance-check
+type: skill
+subtype: rule_engine
+description: Validates a drafted customer message against internal policy and regulatory rules before outreach.
+business_domain: compliance
+intents:
+  - compliance_check
+tags:
+  - compliance
+  - policy
+  - check
+owner: compliance-engineering
+permissions: []
+risk_level: medium
+reusable: true
+input_schema:
+  type: object
+  properties:
+    draft_message:
+      type: string
+    customer_segment:
+      type: string
+  required:
+    - draft_message
+output_schema:
+  type: object
+  properties:
+    passed:
+      type: boolean
+    findings:
+      type: array
+depends_on:
+  - external_id: product-policy-kb
+    target_type: knowledge_data
+    dependency_type: uses_knowledge
+metadata:
+  system_of_record: compliance-platform
+  review_cycle_days: 90
