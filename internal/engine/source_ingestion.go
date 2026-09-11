@@ -111,7 +111,8 @@ func (e *Engine) runImport(ctx context.Context, spec importFor) (*ImportResult, 
 		}
 		if stored.Status == domain.CandidateStatusRegistered {
 			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("%s was already registered and was left unchanged", stored.Name))
+				fmt.Sprintf("%s (%s) is already in the registry; the existing entry was kept",
+					stored.Name, stored.ExternalID))
 		}
 		result.Candidates = append(result.Candidates, stored)
 	}

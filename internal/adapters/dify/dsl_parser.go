@@ -97,15 +97,48 @@ type Edge struct {
 	Target string `yaml:"target"`
 }
 
-// Known Dify node types.
+// Dify node types that yield a capability.
 const (
-	NodeStart              = "start"
 	NodeLLM                = "llm"
 	NodeTool               = "tool"
 	NodeKnowledgeRetrieval = "knowledge-retrieval"
-	NodeAnswer             = "answer"
-	NodeEnd                = "end"
+	NodeHTTPRequest        = "http-request"
+	NodeDocumentExtractor  = "document-extractor"
 )
+
+// Dify node types that are recognised but carry no capability of their own: control
+// flow, plumbing and canvas annotations. They are skipped silently — reporting them
+// would bury the genuinely unrecognised nodes in noise.
+var structuralNodeTypes = map[string]bool{
+	"start":               true,
+	"end":                 true,
+	"answer":              true,
+	"code":                true,
+	"if-else":             true,
+	"iteration":           true,
+	"iteration-start":     true,
+	"loop":                true,
+	"loop-start":          true,
+	"template-transform":  true,
+	"variable-aggregator": true,
+	"variable-assigner":   true,
+	"assigner":            true,
+	"parameter-extractor": true,
+	"question-classifier": true,
+	"list-operator":       true,
+	"note":                true,
+	"custom-note":         true,
+	"agent":               true,
+}
+
+// capabilityNodeTypes are the node types Map turns into candidates.
+var capabilityNodeTypes = map[string]bool{
+	NodeLLM:                true,
+	NodeTool:               true,
+	NodeKnowledgeRetrieval: true,
+	NodeHTTPRequest:        true,
+	NodeDocumentExtractor:  true,
+}
 
 // ParseResult is a parsed DSL plus anything that was skipped.
 type ParseResult struct {
@@ -126,18 +159,39 @@ func Parse(payload []byte) (ParseResult, error) {
 		return result, fmt.Errorf("dify dsl has no app.name; is this a Dify application export?")
 	}
 
+	// Only genuinely unrecognised node types are worth reporting. Structural nodes and
+	// canvas notes are expected and silently ignored.
+	var unknown []string
 	for _, node := range result.DSL.Graph().Nodes {
-		switch node.Data.Type {
-		case NodeStart, NodeLLM, NodeTool, NodeKnowledgeRetrieval, NodeAnswer, NodeEnd:
-		case "":
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("node %q has no data.type and was skipped", node.ID))
+		kind := node.Kind()
+		switch {
+		case capabilityNodeTypes[kind], structuralNodeTypes[kind]:
+		case kind == "":
+			// A node with no type anywhere is a canvas annotation or a malformed entry;
+			// either way there is nothing to extract and nothing to act on.
 		default:
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("node %q has unsupported type %q and was skipped", node.ID, node.Data.Type))
+			unknown = append(unknown, fmt.Sprintf("%s (%s)", kind, node.ID))
 		}
 	}
+	if len(unknown) > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%d node type(s) are not yet supported and produced no capability: %s",
+			len(unknown), strings.Join(unknown, ", ")))
+	}
 	return result, nil
+}
+
+// Kind returns a node's effective type. Dify normally puts it on `data.type`, but some
+// node kinds — canvas notes in particular — carry it only at the node level, so both
+// are consulted before a node is treated as untyped.
+func (n Node) Kind() string {
+	if n.Data.Type != "" {
+		return n.Data.Type
+	}
+	if n.Type != "" && n.Type != "custom" {
+		return n.Type
+	}
+	return ""
 }
 
 // Graph returns the workflow graph.
@@ -154,15 +208,29 @@ func (d DSL) IsAgentMode() bool {
 	}
 }
 
-// NodesOfType returns every node of a given data.type, in document order.
+// NodesOfType returns every node of a given type, in document order.
 func (g Graph) NodesOfType(nodeType string) []Node {
 	var out []Node
 	for _, node := range g.Nodes {
-		if node.Data.Type == nodeType {
+		if node.Kind() == nodeType {
 			out = append(out, node)
 		}
 	}
 	return out
+}
+
+// StartNodeID returns the id of the graph's entry node, or the first node when the
+// graph has no explicit start.
+func (g Graph) StartNodeID() string {
+	for _, node := range g.Nodes {
+		if node.Kind() == "start" {
+			return node.ID
+		}
+	}
+	if len(g.Nodes) > 0 {
+		return g.Nodes[0].ID
+	}
+	return ""
 }
 
 // OrderedSteps walks the graph from its start node and returns the titles of the nodes
@@ -180,13 +248,7 @@ func (g Graph) OrderedSteps() []string {
 		byID[node.ID] = node
 	}
 
-	var start string
-	for _, node := range g.Nodes {
-		if node.Data.Type == NodeStart {
-			start = node.ID
-			break
-		}
-	}
+	start := g.StartNodeID()
 
 	var (
 		steps   []string
@@ -213,18 +275,16 @@ func (g Graph) OrderedSteps() []string {
 	return steps
 }
 
-// StepTitle returns a workflow step label for nodes that do real work. Start and answer
-// nodes are plumbing and produce no step.
+// StepTitle returns a workflow step label for nodes that do real work. Start, answer and
+// control-flow nodes are plumbing and produce no step.
 func (n Node) StepTitle() string {
-	switch n.Data.Type {
-	case NodeLLM, NodeTool, NodeKnowledgeRetrieval:
-		if n.Data.Title != "" {
-			return n.Data.Title
-		}
-		return n.ID
-	default:
+	if !capabilityNodeTypes[n.Kind()] {
 		return ""
 	}
+	if n.Data.Title != "" {
+		return n.Data.Title
+	}
+	return n.ID
 }
 
 // SystemPrompt concatenates an llm node's prompt template into a single document.

@@ -6,26 +6,56 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/open-fin/agent-composer/internal/domain"
 )
 
-var (
-	slugShaped = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
-	uuidShaped = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-)
+var uuidShaped = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // SlugFor picks the stable identifier a capability is referenced by in composition YAML.
 //
 // A source system's own identifier is preferred when it is already readable, because
-// that is what operators recognise (`crm-query`, `product-policy-kb`). Opaque ids —
-// Dify's dataset UUIDs, for example — are discarded in favour of the display name.
+// that is what operators recognise (`crm-query`, `product-policy-kb`). Opaque ids are
+// discarded in favour of the display name: Dify dataset UUIDs, and the numeric node ids
+// Dify generates (`1776673793380`), which carry no meaning at all.
 func SlugFor(externalID, name string) string {
 	trimmed := strings.ToLower(strings.TrimSpace(externalID))
-	if trimmed != "" && slugShaped.MatchString(trimmed) && !uuidShaped.MatchString(trimmed) {
+	if trimmed != "" && isSlugShaped(trimmed) && !uuidShaped.MatchString(trimmed) && !isAllDigits(trimmed) {
 		return trimmed
 	}
 	return domain.Slugify(name)
+}
+
+// isSlugShaped reports whether an identifier already reads as a slug: lower-case
+// letters or digits of any script, separated by single hyphens. Restricting this to
+// ASCII would reject perfectly good non-Latin identifiers.
+func isSlugShaped(value string) bool {
+	if value == "" || strings.HasPrefix(value, "-") || strings.HasSuffix(value, "-") {
+		return false
+	}
+	if strings.Contains(value, "--") {
+		return false
+	}
+	for _, r := range value {
+		if r == '-' || unicode.IsDigit(r) {
+			continue
+		}
+		if !unicode.IsLetter(r) || unicode.IsUpper(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// isAllDigits marks machine-generated numeric identifiers, which make meaningless slugs.
+func isAllDigits(value string) bool {
+	for _, r := range value {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return value != ""
 }
 
 // NormalizeFields cleans a resolved candidate's fields before they become a capability:

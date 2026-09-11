@@ -499,11 +499,29 @@ Recorded rather than silently absorbed.
 9. **The generated YAML includes `description` and `missing_capabilities`.** The gap is a
    deliverable — it tells the implementer what to build next.
 10. **The Dify parser targets a real Dify export subset** (`app` / `kind` / `version` /
-    `workflow.graph`, node types `start`, `llm`, `tool`, `knowledge-retrieval`, `answer`,
-    `end`) rather than an invented schema, so a customer's own export has a chance of
-    parsing. Unknown node types are skipped with a warning, never a hard failure. It is a
+    `workflow.graph`) rather than an invented schema, so a customer's own export has a
+    chance of parsing. Capability-bearing node types are `llm`, `tool`,
+    `knowledge-retrieval`, `http-request` and `document-extractor`; control-flow and
+    canvas nodes (`start`, `end`, `answer`, `code`, `if-else`, `iteration`, `loop`,
+    `template-transform`, `variable-aggregator`, `parameter-extractor`,
+    `question-classifier`, `list-operator`, notes) are recognised and skipped silently.
+    Anything else is reported in one summary warning, never a hard failure. It is a
     subset, not full DSL coverage.
 11. **Default port is 8088, not 8080**, which is commonly already in use.
+
+### Naming rules for imported assets
+
+Two rules matter when importing real exports, and both exist because of bugs found
+against a live Dify tenant:
+
+- **Slugs preserve non-ASCII letters.** An ASCII-only rule collapsed every pure-CJK name
+  onto a single identifier, silently merging unrelated capabilities. `智能客服助手` and
+  `合规检查助手` are now distinct slugs.
+- **Nodes left on Dify's default title are qualified by their application.** A node
+  titled `LLM` describes its mechanism, not its business function, and would otherwise be
+  the identity of every untitled llm node in the tenant. A node the author renamed keeps
+  its own name, so composition YAML stays readable (`product-recommendation`, not
+  `product-recommendation-workflow-product-recommendation`).
 
 ## Non-goals
 

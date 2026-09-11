@@ -50,21 +50,34 @@ func Map(dsl DSL, sourceID, sourceSystem string) MapResult {
 	// declare dependencies on them.
 	var toolRefs, knowledgeRefs, promptRefs, skillRefs []domain.DependencyRef
 
-	for _, node := range graph.NodesOfType(NodeTool) {
-		externalID := firstNonEmpty(node.Data.ProviderID, node.Data.ToolName, node.ID)
+	// Tool-like nodes. A Dify tool carries a real provider id; the built-in HTTP request
+	// and document extractor nodes do not, so they are identified by the app and node
+	// title instead. All three are externally provisioned work, so all three are tools.
+	toolLikeNodes := append(append(
+		append([]Node{}, graph.NodesOfType(NodeTool)...),
+		graph.NodesOfType(NodeHTTPRequest)...),
+		graph.NodesOfType(NodeDocumentExtractor)...)
+
+	for _, node := range toolLikeNodes {
+		title := qualifiedNodeTitle(dsl.App.Name, node)
+		externalID := firstNonEmpty(node.Data.ProviderID, node.Data.ToolName, domain.Slugify(title))
 		name := firstNonEmpty(node.Data.Title, externalID)
+		if isDefaultTitle(node.Data.Title) {
+			name = title
+		}
 		result.Candidates = append(result.Candidates, newCandidate(
 			domain.CapabilityTypeTool, externalID, name, node.Data.Desc,
 			domain.CandidateStatusExtracted,
 			map[string]any{
 				"node_id":       node.ID,
+				"node_type":     node.Kind(),
 				"provider_id":   node.Data.ProviderID,
 				"provider_name": node.Data.ProviderName,
 				"provider_type": node.Data.ProviderType,
 				"tool_name":     node.Data.ToolName,
 			},
 			domain.CapabilityFields{
-				Subtype:      firstNonEmpty(node.Data.ProviderType, "builtin"),
+				Subtype:      firstNonEmpty(node.Data.ProviderType, node.Kind()),
 				InputSchema:  schemaFromToolParams(node.Data.ToolParams),
 				OutputSchema: objectSchema(map[string]string{"result": "object"}, nil),
 			}))
@@ -75,11 +88,15 @@ func Map(dsl DSL, sourceID, sourceSystem string) MapResult {
 	}
 
 	for _, node := range graph.NodesOfType(NodeKnowledgeRetrieval) {
-		externalID := node.ID
+		title := qualifiedNodeTitle(dsl.App.Name, node)
+		externalID := domain.Slugify(title)
 		if len(node.Data.DatasetIDs) > 0 && node.Data.DatasetIDs[0] != "" {
 			externalID = node.Data.DatasetIDs[0]
 		}
 		name := firstNonEmpty(node.Data.Title, externalID)
+		if isDefaultTitle(node.Data.Title) {
+			name = title
+		}
 		result.Candidates = append(result.Candidates, newCandidate(
 			domain.CapabilityTypeKnowledgeData, externalID, name, node.Data.Desc,
 			domain.CandidateStatusExtracted,
@@ -96,7 +113,10 @@ func Map(dsl DSL, sourceID, sourceSystem string) MapResult {
 	}
 
 	for _, node := range graph.NodesOfType(NodeLLM) {
-		title := firstNonEmpty(node.Data.Title, node.ID)
+		// A node left on Dify's default title ("LLM") says nothing about what it does and
+		// would collide with every other default-titled node in the tenant, so it is
+		// qualified by the application it belongs to.
+		title := qualifiedNodeTitle(dsl.App.Name, node)
 		prompt := node.SystemPrompt()
 
 		promptName := title + " Prompt"
@@ -191,10 +211,65 @@ func Map(dsl DSL, sourceID, sourceSystem string) MapResult {
 			}))
 	} else {
 		result.Warnings = append(result.Warnings,
-			"app mode "+firstNonEmpty(dsl.App.Mode, "(unset)")+" is not conversational; no agent capability was extracted")
+			"this app is a "+firstNonEmpty(dsl.App.Mode, "(unset)")+
+				", not a conversational agent, so its capabilities were extracted without an agent")
 	}
 
 	return result
+}
+
+// defaultNodeTitles are the labels Dify gives a node when the author never renames it,
+// in the locales the console ships. Such a title identifies the node's *mechanism*, not
+// its business function, so on its own it is not a usable capability name.
+var defaultNodeTitles = map[string]bool{
+	"llm":                 true,
+	"tool":                true,
+	"knowledge retrieval": true,
+	"http request":        true,
+	"doc extractor":       true,
+	"document extractor":  true,
+	"agent":               true,
+	"answer":              true,
+	"start":               true,
+	"end":                 true,
+	"code":                true,
+	// Simplified Chinese console defaults.
+	"大模型":   true,
+	"知识检索":  true,
+	"工具":    true,
+	"直接回复":  true,
+	"开始":    true,
+	"结束":    true,
+	"文档提取器": true,
+}
+
+// isDefaultTitle reports whether a node title was left at Dify's default.
+func isDefaultTitle(title string) bool {
+	return defaultNodeTitles[strings.ToLower(strings.TrimSpace(title))]
+}
+
+// qualifiedNodeTitle names a node for capability purposes.
+//
+// A renamed node is already meaningful on its own ("Product Recommendation"), and using
+// it unqualified keeps composition YAML readable. A node still on its default title is
+// qualified by its application, because "LLM" would otherwise be the identity of every
+// untitled llm node in the tenant — silently merging unrelated capabilities.
+func qualifiedNodeTitle(appName string, node Node) string {
+	title := strings.TrimSpace(node.Data.Title)
+	if title != "" && !isDefaultTitle(title) {
+		return title
+	}
+	app := strings.TrimSpace(appName)
+	switch {
+	case app != "" && title != "":
+		return app + " " + title
+	case app != "":
+		return app + " " + node.ID
+	case title != "":
+		return title
+	default:
+		return node.ID
+	}
 }
 
 // workflowNameFor derives the workflow's display name from the app name without
@@ -231,7 +306,7 @@ func describeSkill(title, desc string) string {
 }
 
 func startVariables(g Graph) []Variable {
-	for _, node := range g.NodesOfType(NodeStart) {
+	for _, node := range g.NodesOfType("start") {
 		if len(node.Data.Variables) > 0 {
 			return node.Data.Variables
 		}
